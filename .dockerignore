@@ -1,0 +1,14 @@
+.git
+.gitignore
+.dockerignore
+.env
+.env.exemple
+node_modules
+npm-debug.log*
+README.md
+sujet.txt
+check-status.sh
+screenshots/
+*.png
+*.jpg
+*.jpeg

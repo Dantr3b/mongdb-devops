@@ -1,0 +1,71 @@
+B2 INFO CYBER – Conteneurisation
+PROJET FIL ROUGE
+Activité 1 – Création d’un conteneur Mongo avec Docker
+Objectifs
+
+L'objectif est de créer une image Docker personnalisée basée sur MongoDB qui, dès son lancement, contient une base de données fonctionnelle pour un moteur de blog.
+
+Livrable(s)
+
+Dépôt Git contenant :
+
+Dockerfile
+Script .js
+README.md
+
+Docker Hub :
+
+Lien vers l'image publique
+
+Preuve de fonctionnement :
+
+Une capture d’écran montrant le résultat d’une commande find() sur la collection posts depuis le conteneur en cours d’exécution
+Instructions
+1. Données & Intégrité (NoSQL)
+Initialisation automatique :
+L’image doit pré-configurer une base de données nommée blog_db dès le premier lancement.
+Collection & Contenu :
+Créer une collection posts contenant au moins 5 articles de test
+(champs : titre, auteur, vues).
+Validation de schéma :
+Vous devez implémenter un JSON Schema Validator sur la collection posts.
+Toute insertion ne respectant pas strictement le type des champs
+(ex : un nombre à la place d'une chaîne) doit être rejetée par la base.
+2. Sécurité & Dockerfile
+Image de base :
+Utiliser une image officielle MongoDB, mais privilégier une version légère
+(type slim ou ubi) pour limiter la surface d’attaque.
+Privilèges :
+Le processus MongoDB ne doit jamais s’exécuter en tant qu’utilisateur root.
+Vous devez configurer l’image pour utiliser un utilisateur non-privilégié.
+Secrets :
+L’utilisation de variables d’environnement est obligatoire pour la configuration.
+Aucun identifiant ne doit apparaître en dur dans le Dockerfile.
+3. Script de Viabilité (The "Pre-Healthcheck")
+
+Vous devez fournir un script Bash nommé check-status.sh à exécuter depuis votre machine hôte.
+
+Ce script doit :
+
+Utiliser la commande docker exec pour lancer un test à l’intérieur du conteneur.
+Vérifier via mongosh que la base blog_db répond et que les données sont accessibles.
+Prouver que l’utilisateur exécutant le service n’est pas root
+(via une commande type whoami dans le conteneur).
+Logique :
+Afficher un message de succès si tout est conforme
+Afficher une erreur détaillée si un point échoue
+4. Livraison & Validation
+Docker Hub :
+Publier l’image sur un dépôt public avec le tag 1.0.0.
+Dépôt Git :
+Doit contenir :
+Dockerfile
+Scripts JS/Bash
+Fichier .env.example
+README.md
+Preuves (captures d’écran) :
+Succès du script check-status.sh
+Erreur lors d’une insertion invalide (test du validateur de schéma)
+Résultat de docker ps et preuve de l’utilisateur interne
+Ressources
+Docker
