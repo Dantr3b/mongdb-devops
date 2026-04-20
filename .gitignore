@@ -4,6 +4,7 @@
 # Docker
 .docker/
 data/
+.dockerignore
 
 # Dependencies
 node_modules/
