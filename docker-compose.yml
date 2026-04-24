@@ -1,0 +1,136 @@
+networks:
+  db_network:
+    internal: true
+  api_network:
+
+services:
+
+  # MongoDB
+  db_mongo:
+    build: ./mongo
+    restart: on-failure
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo/init-blog.js:/docker-entrypoint-initdb.d/init-blog.js:ro
+    networks:
+      - db_network
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - >
+          mongosh
+          --username $$MONGO_INITDB_ROOT_USERNAME
+          --password $$MONGO_INITDB_ROOT_PASSWORD
+          --authenticationDatabase admin
+          --quiet
+          --eval "const c=db.getSiblingDB('blog_db').posts.countDocuments({}); if(c!==5){quit(1);}"
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # MySQL
+  db_mysql:
+    image: mysql:9.1
+    restart: on-failure
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - ./sql-scripts:/docker-entrypoint-initdb.d
+      - mysql_data:/var/lib/mysql
+    networks:
+      - db_network
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - >
+          mysql -uroot -p$$MYSQL_ROOT_PASSWORD ynov-ci
+          -e 'SELECT IF(COUNT(*)=4,"OK","FAIL") FROM utilisateurs;'
+          | grep -q OK
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Mongo-Express
+  admin_mongo:
+    image: mongo-express:latest
+    restart: on-failure
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      ME_CONFIG_MONGODB_URL: "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@db_mongo:27017/"
+      ME_CONFIG_BASICAUTH: "false"
+    ports:
+      - "8081:8081"
+    depends_on:
+      db_mongo:
+        condition: service_healthy
+    networks:
+      - db_network
+      - api_network
+    healthcheck:
+      test: node -e "require('http').get('http://127.0.0.1:8081', (res) => { if (res.statusCode === 200) { process.exit(0); } else { process.exit(1); } }).on('error', () => process.exit(1))"
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # Adminer
+  admin_mysql:
+    image: adminer:latest
+    restart: on-failure
+    environment:
+      ADMINER_DEFAULT_SERVER: db_mysql
+    ports:
+      - "8080:8080"
+    depends_on:
+      db_mysql:
+        condition: service_healthy
+    networks:
+      - db_network
+      - api_network
+    healthcheck:
+      test: ["CMD", "php", "-r", "$$c=@fsockopen('localhost',8080);if(!$$c){exit(1);}fclose($$c);exit(0);"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+
+  # FastAPI
+  api:
+    build: ./api
+    restart: on-failure
+    environment:
+      MYSQL_HOST: db_mysql
+      MYSQL_USER: root
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MONGO_HOST: db_mongo
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - ./api:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db_mongo:
+        condition: service_healthy
+      db_mysql:
+        condition: service_healthy
+    networks:
+      - db_network
+      - api_network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  mongo_data:
+  mysql_data:

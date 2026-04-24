@@ -4,7 +4,10 @@
 # Docker
 .docker/
 data/
-.dockerignore
+
+# Python
+__pycache__/
+*.pyc
 
 # Dependencies
 node_modules/
