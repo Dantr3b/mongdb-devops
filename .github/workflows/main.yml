@@ -1,0 +1,136 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [tpDockerCompose]
+  pull_request:
+    branches: [tpDockerCompose]
+
+jobs:
+  build_scan:
+    name: Job 1 - Analyse de Sécurité
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build FastAPI Image
+        run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/python-api:latest -f api/Dockerfile ./api
+
+      - name: Docker Scout Scan FastAPI
+        uses: docker/scout-action@v1
+        with:
+          command: cves,recommendations
+          image: ${{ secrets.DOCKERHUB_USERNAME }}/python-api:latest
+          only-severities: critical
+          exit-code: true
+
+      - name: Pull MySQL Image for Trivy
+        run: docker pull mysql:9.1
+
+      - name: Trivy Scan MySQL
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "mysql:9.1"
+          format: "table"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+
+  integration_tests:
+    name: Job 2 - Tests d'Intégration
+    needs: build_scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate .env file
+        run: |
+          echo "MONGO_INITDB_ROOT_USERNAME=admin" >> .env
+          echo "MONGO_INITDB_ROOT_PASSWORD=${{ secrets.MONGO_INITDB_ROOT_PASSWORD }}" >> .env
+          echo "MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}" >> .env
+          echo "MYSQL_DATABASE=ynov-ci" >> .env
+
+      - name: Build and deploy Stack
+        run: docker compose up -d --build
+
+      - name: Validation de Santé (Healthcheck)
+        run: |
+          MAX_TRIES=12
+          for ((i=1; i<=MAX_TRIES; i++)); do
+            echo "Tentative $i/$MAX_TRIES : Vérification de l'état des conteneurs..."
+            
+            # Utilisation de jq pour récupérer le statut 'Health' des conteneurs
+            # (On gère les deux formats possibles de Docker Compose selon la version)
+            STATUSES=$(docker compose ps --format json | jq -r '.[].Health')
+            if [ -z "$STATUSES" ] || [ "$STATUSES" == "null" ]; then
+              STATUSES=$(docker compose ps --format json | jq -r '.Health')
+            fi
+            
+            HEALTHY_COUNT=$(echo "$STATUSES" | grep -c "healthy" || true)
+            STARTING_COUNT=$(echo "$STATUSES" | grep -c "starting" || true)
+            UNHEALTHY_COUNT=$(echo "$STATUSES" | grep -c "unhealthy" || true)
+            
+            echo "Services healthy: $HEALTHY_COUNT, starting: $STARTING_COUNT, unhealthy: $UNHEALTHY_COUNT"
+            
+            # Il y a 5 services dans le docker-compose
+            if [ "$HEALTHY_COUNT" -ge 5 ]; then
+              echo "✅ Tous les services sont prêts et healthy !"
+              exit 0
+            fi
+            
+            sleep 5
+          done
+
+          echo "❌ Erreur : Les services ne sont pas tous healthy après le temps imparti."
+          docker compose ps
+          exit 1
+
+      - name: Validation Fonctionnelle
+        run: |
+          echo "Test de la route /posts..."
+          HTTP_POSTS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/posts)
+          if [ "$HTTP_POSTS" -ne 200 ]; then
+            echo "Erreur sur /posts (Code: $HTTP_POSTS)"
+            exit 1
+          fi
+          echo "✅ /posts a répondu avec 200"
+
+          echo "Test de la route /users..."
+          HTTP_USERS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/users)
+          if [ "$HTTP_USERS" -ne 200 ]; then
+            echo "Erreur sur /users (Code: $HTTP_USERS)"
+            exit 1
+          fi
+          echo "✅ /users a répondu avec 200"
+
+  publish:
+    name: Job 3 - Publication
+    needs: integration_tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push FastAPI Image
+        run: |
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/python-api:latest -f api/Dockerfile ./api
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/python-api:latest
