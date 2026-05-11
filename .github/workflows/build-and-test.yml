@@ -1,0 +1,24 @@
+name: Build and Test Application
+
+on:
+  push:
+    branches: [tpDockerCompose]
+  pull_request:
+    branches: [tpDockerCompose]
+
+jobs:
+  build_test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        run: docker build -t dantr3b/mongo-blog:1.0.0 -f ./Dockerfile .
+
+      - name: Build Python API image
+        run: docker build -t dantr3b/python-api:1.0.0 -f api/Dockerfile ./api
