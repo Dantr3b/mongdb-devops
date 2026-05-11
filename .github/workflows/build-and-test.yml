@@ -29,3 +29,22 @@ jobs:
         with :
           username : ${{secrets.DOCKERHUB_USERNAME}}
           password: ${{secrets.DOCKERHUB_TOKEN}}
+
+      - name: Docker Scout Scan
+        uses: docker/scout-action@v1
+        with:
+          command: cves, recommendations
+          image: dantr3b/mongo-blog:1.0.0
+          file: mongo/Dockerfile
+          only-severities: cirical, high
+          exit-code: true
+
+      - name: Docker Scout Scan
+        uses: docker/scout-action@v1
+        with:
+          command: cves, recommendations
+          image: dantr3b/python-api:1.0.0
+          file: api/Dockerfile
+          only-severities: cirical, high
+          exit-code: true
+
